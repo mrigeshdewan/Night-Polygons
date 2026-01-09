@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ambulance Coverage Impact Simulator Pro</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #111; color: #eee; }
+        #sidebar { width: 320px; background: #222; overflow-y: auto; padding: 20px; border-right: 1px solid #444; display: flex; flex-direction: column; }
+        #map { flex-grow: 1; }
+        .section { margin-bottom: 25px; }
+        h3 { font-size: 14px; text-transform: uppercase; color: #888; border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 15px; }
+        .control-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 14px; cursor: pointer; }
+        .control-row input { margin-right: 10px; }
+        .slider-wrap { margin-bottom: 15px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+        .val { color: #00e676; font-weight: bold; }
+        .depot-item { display: flex; align-items: center; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #333; }
+        .depot-item:hover { background: #2a2a2a; }
+        .highway-tag { font-size: 9px; background: #f1c40f; color: #000; padding: 1px 4px; border-radius: 3px; margin-left: 5px; font-weight: bold; }
+        input[type=range] { width: 100%; accent-color: #3498db; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div style="margin-bottom: 20px;">
+        <h2 style="margin: 0; font-size: 18px; color: #fff;">Coverage Analytics</h2>
+        <p style="font-size: 11px; color: #777;">18-Min Response Impact Model</p>
+    </div>
+
+    <div class="section">
+        <h3>1. Global Layer Toggle</h3>
+        <label class="control-row"><input type="checkbox" id="showDay" checked> Show Day Polygons (Red)</label>
+        <label class="control-row"><input type="checkbox" id="showNight" checked> Show Night Polygons (Blue)</label>
+    </div>
+
+    <div class="section">
+        <h3>2. Speed Parameters (km/h)</h3>
+        <div class="slider-wrap">
+            <div class="slider-label">Urban Peak: <span id="dayVal" class="val">24</span></div>
+            <input type="range" id="daySpeed" min="10" max="40" value="24">
+        </div>
+        <div class="slider-wrap">
+            <div class="slider-label">Urban Night: <span id="nightVal" class="val">54</span></div>
+            <input type="range" id="nightSpeed" min="40" max="90" value="54">
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>3. Select Depots to Display</h3>
+        <div id="depot-list">
+            </div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const depots = [
+        {id: 1, name: "Sector 53 Parking", lat: 28.437899, lon: 77.102520, type: "urban", active: true},
+        {id: 2, name: "Sector 62 Parking", lat: 28.416991, lon: 77.087051, type: "urban", active: true},
+        {id: 3, name: "Sec 51 Parking", lat: 28.418500, lon: 77.056600, type: "urban", active: true},
+        {id: 4, name: "Cyberhub Parking", lat: 28.489833, lon: 77.089244, type: "highway", active: true},
+        {id: 5, name: "Sector 40 Parking", lat: 28.445070, lon: 77.058770, type: "urban", active: true},
+        {id: 6, name: "Sector 70 Parking", lat: 28.395082, lon: 77.036643, type: "urban", active: true},
+        {id: 7, name: "Palam Vihar", lat: 28.518560, lon: 77.039004, type: "highway", active: true},
+        {id: 8, name: "Dwarka Parking", lat: 28.580310, lon: 77.047910, type: "highway", active: true},
+        {id: 9, name: "Sector 9", lat: 28.465942, lon: 76.991433, type: "urban", active: true},
+        {id: 10, name: "Malviya Nagar", lat: 28.530799, lon: 77.204548, type: "urban", active: true},
+        {id: 11, name: "Sector 84", lat: 28.399946, lon: 76.961046, type: "highway", active: true},
+        {id: 12, name: "Lajpat Nagar", lat: 28.568228, lon: 77.240959, type: "urban", active: true},
+        {id: 13, name: "Patel Nagar", lat: 28.651762, lon: 77.158480, type: "urban", active: true},
+        {id: 14, name: "Greater Kailash 1", lat: 28.546425, lon: 77.243343, type: "urban", active: true}
+    ];
+
+    const map = L.map('map', {zoomControl: false}).setView([28.48, 77.12], 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {attribution: '© CARTO'}).addTo(map);
+
+    let layers = L.layerGroup().addTo(map);
+
+    function buildList() {
+        const container = document.getElementById('depot-list');
+        depots.forEach(d => {
+            const div = document.createElement('div');
+            div.className = 'depot-item';
+            div.innerHTML = `
+                <input type="checkbox" id="check-${d.id}" ${d.active ? 'checked' : ''} onchange="toggleDepot(${d.id})">
+                <label for="check-${d.id}">${d.id}. ${d.name} ${d.type === 'highway' ? '<span class="highway-tag">H</span>' : ''}</label>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function toggleDepot(id) {
+        const depot = depots.find(d => d.id === id);
+        depot.active = !depot.active;
+        update();
+    }
+
+    function update() {
+        layers.clearLayers();
+        const uPeak = parseFloat(document.getElementById('daySpeed').value);
+        const uNight = parseFloat(document.getElementById('nightSpeed').value);
+        const showDay = document.getElementById('showDay').checked;
+        const showNight = document.getElementById('showNight').checked;
+        
+        document.getElementById('dayVal').innerText = uPeak;
+        document.getElementById('nightVal').innerText = uNight;
+
+        depots.filter(d => d.active).forEach(d => {
+            const speedMultiplier = (d.type === "highway") ? 1.5 : 1.0;
+            const rDay = (uPeak * speedMultiplier * (18/60)) * 1000;
+            const rNight = (uNight * speedMultiplier * (18/60)) * 1000;
+
+            if(showNight) {
+                L.circle([d.lat, d.lon], {radius: rNight, color: '#3498db', weight: 1, fillColor: '#3498db', fillOpacity: 0.1}).addTo(layers);
+            }
+            if(showDay) {
+                L.circle([d.lat, d.lon], {radius: rDay, color: '#e74c3c', weight: 2, fillColor: '#e74c3c', fillOpacity: 0.3}).addTo(layers);
+            }
+            L.circleMarker([d.lat, d.lon], {radius: 4, color: '#fff', weight: 1, fillColor: '#fff', fillOpacity: 1}).addTo(layers);
+        });
+    }
+
+    document.querySelectorAll('input').forEach(el => el.addEventListener('input', update));
+    buildList();
+    update();
+</script>
+</body>
+</html>
