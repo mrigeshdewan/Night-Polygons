@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ambulance Coverage: Granular Control Model</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; height: 100vh; background: #1a1a1a; color: #fff; }
+        #sidebar { width: 380px; background: #252525; padding: 20px; border-right: 1px solid #444; overflow-y: auto; display: flex; flex-direction: column; }
+        #map { flex-grow: 1; background: #111; }
+        .section { margin-bottom: 25px; background: #2f2f2f; padding: 15px; border-radius: 8px; }
+        h3 { font-size: 12px; text-transform: uppercase; color: #aaa; margin: 0 0 15px 0; letter-spacing: 1px; }
+        .slider-wrap { margin-bottom: 15px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+        .val { color: #00e676; font-weight: bold; }
+        input[type=range] { width: 100%; accent-color: #3498db; cursor: pointer; }
+        
+        .depot-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #3d3d3d; font-size: 13px; }
+        .depot-name { flex-grow: 1; margin-right: 10px; color: #ddd; }
+        .btn-group { display: flex; gap: 4px; }
+        .tgl-btn { border: 1px solid #555; background: #333; color: #888; padding: 4px 8px; cursor: pointer; border-radius: 4px; font-size: 10px; font-weight: bold; transition: 0.2s; }
+        .tgl-btn.active-day { background: #e74c3c; color: white; border-color: #ff5e4d; }
+        .tgl-btn.active-night { background: #3498db; color: white; border-color: #5dade2; }
+        .tag { font-size: 9px; padding: 2px 4px; border-radius: 3px; background: #444; color: #bbb; margin-left: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div style="margin-bottom: 20px;">
+        <h2 style="margin: 0; font-size: 20px; color: #fff;">Operational Reach Model</h2>
+        <p style="font-size: 12px; color: #888;">Response Threshold: 18 Minutes</p>
+    </div>
+
+    <div class="section">
+        <h3>1. Speed Calibration (km/h)</h3>
+        <div class="slider-wrap">
+            <div class="slider-label">Day Speed Ceiling: <span id="dayVal" class="val">24</span></div>
+            <input type="range" id="daySpeed" min="0" max="60" value="24">
+        </div>
+        <div class="slider-wrap">
+            <div class="slider-label">Night Speed Ceiling: <span id="nightVal" class="val">54</span></div>
+            <input type="range" id="nightSpeed" min="0" max="60" value="54">
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>2. Individual Depot Deployment</h3>
+        <div id="depot-list"></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const depots = [
+        {id: 1, name: "Sector 53 Parking", lat: 28.437899, lon: 77.102520, day: true, night: true},
+        {id: 2, name: "Sector 62 Parking", lat: 28.416991, lon: 77.087051, day: true, night: true},
+        {id: 3, name: "Sec 51 Parking", lat: 28.418500, lon: 77.056600, day: true, night: true},
+        {id: 4, name: "Cyberhub Parking", lat: 28.489833, lon: 77.089244, day: true, night: true},
+        {id: 5, name: "Sector 40 Parking", lat: 28.445070, lon: 77.058770, day: true, night: true},
+        {id: 6, name: "Sector 70 Parking", lat: 28.395082, lon: 77.036643, day: true, night: true},
+        {id: 7, name: "Palam Vihar", lat: 28.518560, lon: 77.039004, day: true, night: true},
+        {id: 8, name: "Dwarka Parking", lat: 28.580310, lon: 77.047910, day: true, night: true},
+        {id: 9, name: "Sector 9", lat: 28.465942, lon: 76.991433, day: true, night: true},
+        {id: 10, name: "Malviya Nagar", lat: 28.530799, lon: 77.204548, day: true, night: true},
+        {id: 11, name: "Sector 84", lat: 28.399946, lon: 76.961046, day: true, night: true},
+        {id: 12, name: "Lajpat Nagar", lat: 28.568228, lon: 77.240959, day: true, night: true},
+        {id: 13, name: "Patel Nagar", lat: 28.651762, lon: 77.158480, day: true, night: true},
+        {id: 14, name: "Greater Kailash 1", lat: 28.546425, lon: 77.243343, day: true, night: true}
+    ];
+
+    const map = L.map('map', {zoomControl: false}).setView([28.48, 77.12], 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {attribution: '© CARTO'}).addTo(map);
+
+    let layers = L.layerGroup().addTo(map);
+
+    function buildList() {
+        const container = document.getElementById('depot-list');
+        depots.forEach(d => {
+            const div = document.createElement('div');
+            div.className = 'depot-row';
+            div.innerHTML = `
+                <div class="depot-name">${d.id}. ${d.name}</div>
+                <div class="btn-group">
+                    <button class="tgl-btn ${d.day ? 'active-day' : ''}" id="day-${d.id}" onclick="toggleMode(${d.id}, 'day')">DAY</button>
+                    <button class="tgl-btn ${d.night ? 'active-night' : ''}" id="night-${d.id}" onclick="toggleMode(${d.id}, 'night')">NIGHT</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function toggleMode(id, mode) {
+        const depot = depots.find(d => d.id === id);
+        depot[mode] = !depot[mode];
+        const btn = document.getElementById(`${mode}-${id}`);
+        btn.classList.toggle(mode === 'day' ? 'active-day' : 'active-night');
+        update();
+    }
+
+    function update() {
+        layers.clearLayers();
+        const dSpeed = parseFloat(document.getElementById('daySpeed').value);
+        const nSpeed = parseFloat(document.getElementById('nightSpeed').value);
+        
+        document.getElementById('dayVal').innerText = dSpeed;
+        document.getElementById('nightVal').innerText = nSpeed;
+
+        depots.forEach(d => {
+            if (d.night) {
+                const rN = (nSpeed * (18/60)) * 1000;
+                L.circle([d.lat, d.lon], {radius: rN, color: '#3498db', weight: 1, fillColor: '#3498db', fillOpacity: 0.12}).addTo(layers);
+            }
+            if (d.day) {
+                const rD = (dSpeed * (18/60)) * 1000;
+                L.circle([d.lat, d.lon], {radius: rD, color: '#e74c3c', weight: 1.5, fillColor: '#e74c3c', fillOpacity: 0.35}).addTo(layers);
+            }
+            if (d.day || d.night) {
+                L.circleMarker([d.lat, d.lon], {radius: 3, color: '#fff', weight: 1, fillColor: '#fff', fillOpacity: 1}).addTo(layers);
+            }
+        });
+    }
+
+    document.getElementById('daySpeed').addEventListener('input', update);
+    document.getElementById('nightSpeed').addEventListener('input', update);
+    
+    buildList();
+    update();
+</script>
+</body>
+</html>
