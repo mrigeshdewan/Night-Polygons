@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ambulance Impact Model: Highway vs Urban</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; }
+        #controls { padding: 20px; background: #222; color: white; display: flex; gap: 30px; align-items: center; border-bottom: 2px solid #333; }
+        #map { flex-grow: 1; }
+        .slider-group { display: flex; flex-direction: column; min-width: 220px; }
+        input[type=range] { cursor: pointer; accent-color: #3498db; }
+        .label-text { font-size: 13px; margin-bottom: 8px; color: #bbb; display: flex; justify-content: space-between; }
+        .val { font-weight: bold; color: #00e676; font-size: 16px; }
+        .legend { background: rgba(0,0,0,0.8); color: white; padding: 12px; border-radius: 8px; border: 1px solid #444; }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <div style="line-height: 1.2;">
+        <div style="font-weight: bold; font-size: 20px; color: #fff;">Coverage Simulator</div>
+        <div style="font-size: 12px; color: #888;">18-Minute Response Window</div>
+    </div>
+    <div class="slider-group">
+        <div class="label-text">Urban Peak Speed: <span id="dayVal" class="val">24</span> km/h</div>
+        <input type="range" id="daySpeed" min="10" max="40" value="24">
+    </div>
+    <div class="slider-group">
+        <div class="label-text">Urban Night Speed: <span id="nightVal" class="val">54</span> km/h</div>
+        <input type="range" id="nightSpeed" min="40" max="90" value="54">
+    </div>
+    <div style="font-size: 11px; color: #aaa; max-width: 200px; font-style: italic;">
+        *Highway depots (Cyberhub/Dwarka/Sec 84) are auto-calculated at 1.5x Urban speed.
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Initialize map on Gurgaon/South Delhi
+    const map = L.map('map', {zoomControl: false}).setView([28.48, 77.10], 11);
+    L.control.zoom({position: 'bottomleft'}).addTo(map);
+    
+    // Using a dark map style for better visualization of colored polygons
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const depots = [
+        {name: "Sector 53 Parking", lat: 28.437899, lon: 77.102520, type: "urban"},
+        {name: "Sector 62 Parking", lat: 28.416991, lon: 77.087051, type: "urban"},
+        {name: "Sec 51 Parking", lat: 28.418500, lon: 77.056600, type: "urban"},
+        {name: "Cyberhub Parking", lat: 28.489833, lon: 77.089244, type: "highway"},
+        {name: "Sector 40 Parking", lat: 28.445070, lon: 77.058770, type: "urban"},
+        {name: "Sector 70 Parking", lat: 28.395082, lon: 77.036643, type: "urban"},
+        {name: "Palam Vihar", lat: 28.518560, lon: 77.039004, type: "highway"},
+        {name: "Dwarka Parking", lat: 28.580310, lon: 77.047910, type: "highway"},
+        {name: "Sector 9", lat: 28.465942, lon: 76.991433, type: "urban"},
+        {name: "Malviya Nagar", lat: 28.530799, lon: 77.204548, type: "urban"},
+        {name: "Sector 84", lat: 28.399946, lon: 76.961046, type: "highway"},
+        {name: "Lajpat Nagar", lat: 28.568228, lon: 77.240959, type: "urban"},
+        {name: "Patel Nagar", lat: 28.651762, lon: 77.158480, type: "urban"},
+        {name: "Greater Kailash 1", lat: 28.546425, lon: 77.243343, type: "urban"}
+    ];
+
+    let layers = L.layerGroup().addTo(map);
+
+    function update() {
+        layers.clearLayers();
+        const uPeak = parseFloat(document.getElementById('daySpeed').value);
+        const uNight = parseFloat(document.getElementById('nightSpeed').value);
+        
+        document.getElementById('dayVal').innerText = uPeak;
+        document.getElementById('nightVal').innerText = uNight;
+
+        depots.forEach(d => {
+            const speedMultiplier = (d.type === "highway") ? 1.5 : 1.0;
+            const rDay = (uPeak * speedMultiplier * (18/60)) * 1000;
+            const rNight = (uNight * speedMultiplier * (18/60)) * 1000;
+
+            // Night Reach (Blue)
+            L.circle([d.lat, d.lon], {
+                radius: rNight, color: '#3498db', fillColor: '#3498db', fillOpacity: 0.15, weight: 1
+            }).addTo(layers);
+
+            // Day Reach (Red)
+            L.circle([d.lat, d.lon], {
+                radius: rDay, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.4, weight: 2
+            }).addTo(layers);
+
+            // Depot Marker
+            L.circleMarker([d.lat, d.lon], {
+                radius: 4, color: '#fff', weight: 2, fillColor: (d.type === 'highway' ? '#f1c40f' : '#fff'), fillOpacity: 1
+            }).addTo(layers).bindTooltip(`<b>${d.name}</b><br>Type: ${d.type.toUpperCase()}`, {permanent: false, direction: 'top'});
+        });
+    }
+
+    document.getElementById('daySpeed').addEventListener('input', update);
+    document.getElementById('nightSpeed').addEventListener('input', update);
+    update();
+
+    const legend = L.control({position: 'topright'});
+    legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'legend');
+        div.innerHTML = `
+            <div style="margin-bottom:8px"><b>Legend</b></div>
+            <div style="display:flex;align-items:center;margin-bottom:4px"><div style="width:12px;height:12px;background:#e74c3c;margin-right:8px;border:1px solid #fff"></div> Day (Peak)</div>
+            <div style="display:flex;align-items:center;margin-bottom:4px"><div style="width:12px;height:12px;background:#3498db;margin-right:8px;border:1px solid #fff"></div> Night (Low)</div>
+            <div style="display:flex;align-items:center;"><div style="width:12px;height:12px;background:#f1c40f;margin-right:8px;border-radius:50%"></div> Highway Depot</div>
+        `;
+        return div;
+    };
+    legend.addTo(map);
+</script>
+</body>
+</html>
